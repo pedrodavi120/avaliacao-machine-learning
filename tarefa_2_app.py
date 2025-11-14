@@ -8,7 +8,7 @@ try:
     pipeline = joblib.load('loan_pipeline.joblib')
     st.success("Modelo de pipeline carregado com sucesso!")
 except FileNotFoundError:
-    st.error("Arquivo 'loan_pipeline.joblib' não encontrado. Por favor, execute o notebook 'tarefa_2_treinamento.ipynb' primeiro.")
+    st.error("Arquivo 'loan_pipeline.joblib' não encontrado. Por favor, execute o notebook 'tarefa_2_corrigido.ipynb' primeiro.")
     st.stop()
 except Exception as e:
     st.error(f"Erro ao carregar o modelo: {e}")
@@ -24,55 +24,90 @@ st.markdown("Preencha os dados abaixo para obter uma predição (Sim/Não) e a p
 with st.form("loan_form"):
     st.subheader("Informações do Solicitante")
     
-    # Sexo (radiobutton)
-    gender = st.radio("Sexo", ('Male', 'Female'), index=0)
+    col1, col2 = st.columns(2)
     
-    # Casado (radio)
-    married = st.radio("Casado(a)?", ('Yes', 'No'), index=0)
-    
-    # Dependentes (option/selection)
-    dependents = st.selectbox("Número de Dependentes", ('0', '1', '2', '3+'), index=0)
-    
-    # Educação (radio/selection)
-    education = st.radio("Educação", ('Graduate', 'Not Graduate'), index=0)
-    
-    # Autônomo (radio)
-    self_employed = st.radio("Trabalha por Conta Própria (Autônomo)?", ('No', 'Yes'), index=0)
+    with col1:
+        # Sexo (radiobutton)
+        gender = st.radio("Sexo", ('Male', 'Female'), index=0)
+        
+        # Casado (radio)
+        married = st.radio("Casado(a)?", ('Yes', 'No'), index=0)
+        
+        # Dependentes (selectbox)
+        dependents = st.selectbox("Dependentes", ('0', '1', '2', '3+'), index=0)
+
+    with col2:
+        # Educação (radio)
+        education = st.radio("Educação", ('Graduate', 'Not Graduate'), index=0)
+        
+        # Autônomo (radio)
+        self_employed = st.radio("Autônomo?", ('Yes', 'No'), index=1)
+        
+        # --- CAMPO ADICIONADO ---
+        property_area = st.selectbox("Área da Propriedade", ('Urban', 'Semiurban', 'Rural'), index=0)
+
     
     st.subheader("Informações Financeiras")
     
-    # Rendimento (text) - Usando number_input para melhor controle
-    applicant_income = st.number_input("Rendimento do Solicitante (mensal)", min_value=0, value=5000)
+    col3, col4 = st.columns(2)
     
-    # Valoremprestimo (text) - Usando number_input
-    # O pipeline trata NaNs, então podemos permitir 0 ou um valor padrão
-    loan_amount = st.number_input("Valor do Empréstimo (em milhares)", min_value=0, value=150)
-
-    # Botão de envio
+    with col3:
+        # Renda (number_input)
+        applicant_income = st.number_input("Renda do Solicitante (Mensal)", min_value=0, value=5000)
+        
+        # Valor do Empréstimo (number_input)
+        loan_amount = st.number_input("Valor do Empréstimo (Total)", min_value=0, value=150)
+        
+        # --- CAMPO ADICIONADO ---
+        # (O pipeline foi treinado com 1.0 e 0.0)
+        credit_history = st.radio("Possui Histórico de Crédito?", (1.0, 0.0), 
+                                  format_func=lambda x: 'Sim' if x == 1.0 else 'Não', index=0)
+        
+    with col4:
+        # --- CAMPO ADICIONADO ---
+        coapplicant_income = st.number_input("Renda do Co-solicitante (Mensal)", min_value=0, value=0)
+        
+        # --- CAMPO ADICIONADO ---
+        loan_amount_term = st.number_input("Prazo do Empréstimo (Meses)", min_value=12, value=360, step=12)
+    
+    
+    # --- Botão de Envio ---
     submitted = st.form_submit_button("Analisar")
 
-# --- Processamento e Exibição dos Resultados (Instrução 2k) ---
 if submitted:
-    # Criar um DataFrame com os dados de entrada
-    # As colunas devem corresponder EXATAMENTE às usadas no treino do pipeline
-    input_data = {
-        'Gender': [gender],
-        'Married': [married],
-        'Dependents': [dependents],
-        'Education': [education],
-        'Self_Employed': [self_employed],
-        'ApplicantIncome': [applicant_income],
-        'LoanAmount': [loan_amount]
-    }
-    
-    # Converter para DataFrame
-    input_df = pd.DataFrame(input_data)
-    
-    st.subheader("Dados Fornecidos:")
-    st.dataframe(input_df)
-    
     try:
-        # Fazer a predição
+        # --- Criar o DataFrame para o pipeline ---
+        # A ESTRUTURA DEVE SER IDÊNTICA AO X_train ORIGINAL
+        
+        input_data = {
+            'Gender': [gender],
+            'Married': [married],
+            'Dependents': [dependents],
+            'Education': [education],
+            'Self_Employed': [self_employed],
+            'ApplicantIncome': [applicant_income],
+            'LoanAmount': [loan_amount],
+            
+            # --- COLUNAS ADICIONADAS AO DICIONÁRIO ---
+            'CoapplicantIncome': [coapplicant_income],
+            'Loan_Amount_Term': [loan_amount_term],
+            'Credit_History': [credit_history],
+            'Property_Area': [property_area]
+        }
+        
+        # Criar o DataFrame
+        # Garantir a ordem das colunas (embora o ColumnTransformer lide com isso, é uma boa prática)
+        col_order = [
+            'ApplicantIncome', 'CoapplicantIncome', 'LoanAmount', 'Loan_Amount_Term', # Numéricas
+            'Gender', 'Married', 'Dependents', 'Education', 'Self_Employed', 'Property_Area', # Categóricas
+            'Credit_History' # Binária
+        ]
+        
+        # Filtra o dicionário para o caso de alguma coluna faltar (embora não deva)
+        input_df_data = {key: input_data[key] for key in col_order if key in input_data}
+        input_df = pd.DataFrame(input_df_data)
+
+        # Obter a predição (Instrução 2k)
         prediction = pipeline.predict(input_df)
         
         # Obter as probabilidades (Instrução 2k)
@@ -102,8 +137,7 @@ if submitted:
             # Fallback caso o modelo não tenha predict_proba
             prediction_status = 'Sim' if prediction[0] == 1 else 'Não'
             st.subheader("Resultado da Análise:")
-            st.success(f"Status: **{prediction_status}**")
-            st.warning("Este modelo não fornece probabilidades.")
+            st.success(f"Status: **{prediction_status}** (Valor: {prediction[0]})")
 
     except Exception as e:
         st.error(f"Ocorreu um erro durante a predição: {e}")
